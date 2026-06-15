@@ -98,12 +98,13 @@ Google Scholar checked; Scholar Labs unchecked — opt-in), **supplementary sour
 between `===LITREVIEW_CONFIG_BEGIN===` and `===LITREVIEW_CONFIG_END===` (exit 0);
 **Cancel** or closing the window exits 2 — abort the run. Parse that JSON and map it
 onto the stages: skip a channel set `false`, set `output_dir`, run Scholar Labs /
-supplementary / citation when `true`, pass `--no-verify` to dedup when `verify` is
+supplementary / citation and the keyless `freesearch` (Stage 4e) / `websearch`
+(Stage 4d) channels when `true`, pass `--no-verify` to dedup when `verify` is
 false and `--no-llm` when `no_llm` is true, skip dedup/screen when false, and pass
 `max_chars` to extraction. The GUI runs nothing itself and calls no API. Shape:
 ```json
 {"document":"…","query":"","output_dir":"…",
- "channels":{"undermind":true,"deepresearch":true,"scholar":true,"scholarlabs":false},
+ "channels":{"undermind":true,"deepresearch":true,"scholar":true,"scholarlabs":false,"freesearch":true,"websearch":true},
  "supplementary":{"ssrn":true,"nber":false,"heinonline":false},
  "citation_chain":false,"top_seeds":20,
  "dedup":true,"verify":true,"screen":true,"no_llm":false,"quick":false,"max_chars":30000}

@@ -33,6 +33,14 @@ CHANNELS = [
     ("scholar", "Google Scholar", "Stage 4a · SearchAPI", True),
     ("scholarlabs", "Scholar Labs", "Stage 2 · opt-in, rate-limited", False),
 ]
+# Keyless channels — no API key or login needed (the "only Claude Code" path).
+# Both default on: free index search is a fast keyless subprocess, and web search
+# uses the agent's own WebSearch/WebFetch tools for broad open-web coverage.
+# key, label, description, default-checked
+KEYLESS_CHANNELS = [
+    ("freesearch", "Free index search", "Stage 4e · OpenAlex/Crossref/S2", True),
+    ("websearch", "Web search", "Stage 4d · agent WebSearch", True),
+]
 # key, label, default-checked. SSRN defaults on (targets the real ssrn.com repo).
 # "forthcoming" is intentionally absent: it is not a source, just a Google Scholar
 # source: filter for three finance journals (JF/JFE/RFS); the --forthcoming CLI flag
@@ -50,7 +58,7 @@ class App(tk.Tk):
         self.channel_cbs: dict[str, ttk.Checkbutton] = {}
         self.supp_cbs: list[ttk.Checkbutton] = []
         self.title("Lit-Review Orchestrator")
-        self.minsize(620, 560)
+        self.minsize(680, 560)
         self._build()
         self._sync_states()
         self.protocol("WM_DELETE_WINDOW", self._cancel)
@@ -82,16 +90,29 @@ class App(tk.Tk):
             row=2, column=2, sticky="w", padx=6)
         inp.columnconfigure(1, weight=1)
 
-        # Channels
+        # Channels — keyed (need an API key / login) on the left, keyless on the right.
         ch = ttk.LabelFrame(root, text="Search channels")
         ch.pack(fill="x", **pad)
+        keyed = ttk.LabelFrame(ch, text="Keyed — need API key / login")
+        keyed.grid(row=0, column=0, sticky="nsew", padx=(6, 4), pady=4)
+        keyless = ttk.LabelFrame(ch, text="Keyless — no key needed")
+        keyless.grid(row=0, column=1, sticky="nsew", padx=(4, 6), pady=4)
+        ch.columnconfigure(0, weight=1)
+        ch.columnconfigure(1, weight=1)
         for i, (key, label, desc, default) in enumerate(CHANNELS):
             v = tk.BooleanVar(value=default)
             self.vars[key] = v
-            cb = ttk.Checkbutton(ch, text=label, variable=v, command=self._on_change)
+            cb = ttk.Checkbutton(keyed, text=label, variable=v, command=self._on_change)
             cb.grid(row=i, column=0, sticky="w", padx=6, pady=2)
             self.channel_cbs[key] = cb
-            ttk.Label(ch, text=desc, foreground="#666").grid(row=i, column=1, sticky="w", padx=6)
+            ttk.Label(keyed, text=desc, foreground="#666").grid(row=i, column=1, sticky="w", padx=6)
+        for i, (key, label, desc, default) in enumerate(KEYLESS_CHANNELS):
+            v = tk.BooleanVar(value=default)
+            self.vars[key] = v
+            cb = ttk.Checkbutton(keyless, text=label, variable=v, command=self._on_change)
+            cb.grid(row=i, column=0, sticky="w", padx=6, pady=2)
+            self.channel_cbs[key] = cb
+            ttk.Label(keyless, text=desc, foreground="#666").grid(row=i, column=1, sticky="w", padx=6)
 
         # Supplementary
         sp = ttk.LabelFrame(root, text="Supplementary sources")
@@ -177,6 +198,9 @@ class App(tk.Tk):
         # supplementary / citation options so the run can't contradict itself.
         for key in DEEP_CHANNELS:
             self.channel_cbs[key].state(["disabled"] if quick else ["!disabled"])
+        # Keyless channels are also off in Quick (Google Scholar only) mode.
+        for key, _, _, _ in KEYLESS_CHANNELS:
+            self.channel_cbs[key].state(["disabled"] if quick else ["!disabled"])
         if quick:
             self.vars["scholar"].set(True)
         for cb in self.supp_cbs:
@@ -191,12 +215,13 @@ class App(tk.Tk):
     # -- config --------------------------------------------------------------
     def _config(self) -> dict:
         quick = self.vars["quick"].get()
-        channels = {k: bool(self.vars[k].get()) for k, _, _, _ in CHANNELS}
+        channels = {k: bool(self.vars[k].get()) for k, _, _, _ in CHANNELS + KEYLESS_CHANNELS}
         supp = {k: bool(self.vars[k].get()) for k, _, _ in SUPP}
         citation = bool(self.vars["citation_chain"].get())
         if quick:
             # Google Scholar only — nothing else runs.
-            channels = {"undermind": False, "deepresearch": False, "scholar": True, "scholarlabs": False}
+            channels = {k: False for k in channels}
+            channels["scholar"] = True
             supp = {k: False for k, _, _ in SUPP}
             citation = False
         dedup = bool(self.vars["dedup"].get())
