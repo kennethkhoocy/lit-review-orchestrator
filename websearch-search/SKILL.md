@@ -18,29 +18,54 @@ normalizes what you gather into the pipeline schema.
 Run it **in parallel** with whatever other channels are available; its output merges
 with theirs at dedup.
 
-## Recipe (agent-driven)
+## Recipe (agent-driven, subagent fan-out)
 
-1. Build a query set from Stage 0: the `scholar_queries` in `search_plan.json` plus
-   the `research_question`. Add a few author/concept variants if useful.
-2. For each query, call **WebSearch**; for the most promising results, **WebFetch**
-   the page (publisher / SSRN / arXiv / NBER / OpenAlex / Semantic Scholar) to read
-   the real title, authors, year, venue, DOI, and abstract. Do NOT invent fields —
-   leave anything you cannot read as `""`. Fan out across parallel subagents for
-   many queries.
-3. Collect the candidates into `OUT/websearch_results.json` as a JSON array:
+This is the default. The orchestrator emits a batched task plan, fans the batches
+out across parallel Opus subagents — so the raw WebSearch/WebFetch text stays inside
+the subagent contexts — and then merges the distilled candidates. It runs the same
+way whether web search is the sole channel (no keys) or an add-on alongside the keyed
+channels.
+
+1. **Emit the task plan** from the Stage-0 queries:
+   ```bash
+   python websearch-search/scripts/websearch_ingest.py --emit-tasks \
+       --queries-file OUT/scholar_queries.json --research-question "<rq>" \
+       --batch-size 3 -o OUT/websearch_tasks.json
+   ```
+   This writes `{system_prompt, research_question, tasks:[{batch_id, queries:[...]}]}`.
+   With no queries it prints `WEBSEARCH_DEFERRED` and writes an empty plan.
+2. **Fan out across Opus subagents** — one per `tasks[k]`. Hand each subagent the
+   `system_prompt`, the `research_question`, and its `queries`, and have it run
+   **WebSearch** on each query, **WebFetch** the most promising hits (publisher /
+   SSRN / arXiv / NBER / OpenAlex / Semantic Scholar) to read the real title,
+   authors, year, venue, DOI, and abstract — never inventing a field, leaving
+   unknowns `""` — and **Write** its candidates to
+   `OUT/websearch_results_batch_<id>.json`:
    ```json
    [{"title": "...", "authors": "First Last, Second Author", "year": "2021",
      "journal": "...", "doi": "10.xxxx/...", "url": "https://...", "abstract": "..."}]
    ```
-   Only `title` is required; fill what you actually found.
-4. Normalize into a stage file:
+   Only `title` is required. Do NOT WebFetch `scholar.google.com` (bot-blocked).
+3. **Merge** the partial files into the stage output:
    ```bash
    python websearch-search/scripts/websearch_ingest.py \
-       --results OUT/websearch_results.json -o OUT/stage4d_websearch.json
+       --results OUT/websearch_results_batch_*.json -o OUT/stage4d_websearch.json
    ```
-   This writes `stage4d_websearch.json` (+ `.ris`) with `source="websearch"`,
-   deduped by title, with best-effort keyless Crossref DOI fill (`--no-enrich` to
-   skip). The `stage[0-9]*.json` dedup glob then picks it up automatically.
+   This dedups by title across all batches, does best-effort keyless Crossref DOI
+   fill (`--no-enrich` to skip), and writes `stage4d_websearch.json` (+ `.ris`,
+   `source="websearch"`). The `stage[0-9]*.json` dedup glob then picks it up. If no
+   batch yielded a usable candidate it prints `WEBSEARCH_DEFERRED` and writes an
+   empty file, so the pipeline continues on the other channels.
+
+### Inline fallback (a handful of queries)
+
+For a small query set you can skip the fan-out: run WebSearch/WebFetch yourself,
+collect everything into one `OUT/websearch_results.json`, and merge the single file
+(`--results` accepts one or many):
+```bash
+python websearch-search/scripts/websearch_ingest.py \
+    --results OUT/websearch_results.json -o OUT/stage4d_websearch.json
+```
 
 ## Anti-hallucination
 

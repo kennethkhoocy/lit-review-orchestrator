@@ -18,12 +18,15 @@ Stages:
   4a Google Scholar SearchAPI.io, driven by the extracted queries  [default]
   4b Supplementary SSRN / NBER / HeinOnline / forthcoming          [opt-in]
   4c Citation chain Semantic Scholar (needs DOI-bearing seeds)      [opt-in]
+  4e Free index    keyless OpenAlex / Crossref / Semantic Scholar lexical search [default]
+                   (Web search / Stage 4d is agent-only — it needs the agent's
+                   WebSearch tools and is not run by this autonomous runner.)
   5  Dedup         merge all outputs, DOI + LLM
   6  Screen        abstract screening against the research question
 
 DAG:
   Stage 0 runs first (everything depends on it).
-  Stages 1, 2, 2b, 4a, 4b run concurrently.
+  Stages 1, 2, 2b, 4a, 4b, 4e run concurrently.
   Stage 4c runs after the search stages (it seeds from their output).
   Stage 5 waits for everything; Stage 6 runs after Stage 5.
 
@@ -80,6 +83,7 @@ STAGE_LABELS = {
     "scholar":       ("Stage 4a", "Google Scholar"),
     "supplementary": ("Stage 4b", "Supplementary"),
     "citation":      ("Stage 4c", "Citation Chain"),
+    "freesearch":    ("Stage 4e", "Free Index"),
     "dedup":         ("Stage 5 ", "Dedup"),
     "screen":        ("Stage 6 ", "Screening"),
 }
@@ -371,6 +375,21 @@ def cmd_citation(args, output_dir: Path, seeds_file: Path) -> list[str]:
     ]
 
 
+def cmd_freesearch(args, output_dir: Path, doc_mode: bool) -> list[str]:
+    # Keyless lexical search of OpenAlex / Crossref / Semantic Scholar (Stage 4e).
+    # Defaults (per-query count, all three sources) suit an unattended run, and it
+    # defers gracefully (FREESEARCH_DEFERRED, empty output, exit 0) on any failure.
+    cmd = [
+        _py(), str(SKILLS_DIR / "freesearch-search" / "scripts" / "freesearch_search.py"),
+        "-o", str(output_dir / "stage4e_freesearch.json"),
+    ]
+    if doc_mode:
+        cmd += ["--queries-file", str(output_dir / "scholar_queries.json")]
+    else:
+        cmd += ["--query", args.query]
+    return cmd
+
+
 def cmd_screen(args, output_dir: Path, research_question: str) -> list[str]:
     return [
         _py(), str(SKILLS_DIR / "lit-screen" / "scripts" / "lit_screen.py"),
@@ -402,7 +421,7 @@ def _collect_dedup_inputs(output_dir: Path, state: PipelineState) -> list[Path]:
     directory cannot contaminate the merge.
     """
     search_stages = ("undermind", "scholarlabs", "deepresearch", "scholar",
-                     "supplementary", "citation")
+                     "supplementary", "citation", "freesearch")
     json_inputs: list[Path] = []
     ris_inputs: list[Path] = []
     for key in search_stages:
@@ -441,6 +460,8 @@ async def run_pipeline(args: argparse.Namespace):
 
     supp_on = (not quick) and any([args.ssrn, args.nber, args.heinonline, args.forthcoming])
     cite_on = (not quick) and bool(args.citation_chain)
+    # Keyless free-index search (Stage 4e): on by default, off in quick (GS-only) mode.
+    freesearch_on = (not quick) and getattr(args, "freesearch", True)
 
     # Register stages (in dashboard order). Optional sources only appear when on.
     state = PipelineState()
@@ -455,6 +476,7 @@ async def run_pipeline(args: argparse.Namespace):
     _reg("scholarlabs", getattr(args, "scholarlabs", False) and "scholarlabs" not in skip)
     _reg("deepresearch", "deepresearch" not in skip)
     _reg("scholar", "scholar" not in skip)
+    _reg("freesearch", freesearch_on)
     if supp_on:
         _reg("supplementary", True)
     if cite_on:
@@ -516,6 +538,9 @@ async def run_pipeline(args: argparse.Namespace):
     if state.stages["scholar"].status == "pending":
         tasks["scholar"] = asyncio.create_task(
             run_stage(state, "scholar", cmd_scholar(args, output_dir, doc_mode)))
+    if state.stages["freesearch"].status == "pending":
+        tasks["freesearch"] = asyncio.create_task(
+            run_stage(state, "freesearch", cmd_freesearch(args, output_dir, doc_mode)))
     if supp_on and state.stages["supplementary"].status == "pending":
         tasks["supplementary"] = asyncio.create_task(
             run_stage(state, "supplementary", cmd_supplementary(args, output_dir, doc_mode)))
@@ -532,7 +557,7 @@ async def run_pipeline(args: argparse.Namespace):
         # Google Scholar, supplementary), merged into one file. supplementary's
         # _load_seeds sorts by score/citations and keeps the DOI-bearing top-N.
         seed_stage_keys = ("undermind", "scholarlabs", "deepresearch",
-                           "scholar", "supplementary")
+                           "scholar", "supplementary", "freesearch")
         merged_seeds: list[dict] = []
         for key in seed_stage_keys:
             sr = state.stages.get(key)
@@ -678,6 +703,10 @@ def main():
                    help="Also search forthcoming lists (JF, JFE, RFS)")
     p.add_argument("--citation-chain", action="store_true",
                    help="Also run Semantic Scholar citation chaining (needs DOI seeds)")
+    p.add_argument("--freesearch", action=argparse.BooleanOptionalAction, default=True,
+                   help="Keyless free-index search (Stage 4e: OpenAlex/Crossref/Semantic "
+                        "Scholar lexical search). On by default; use --no-freesearch to skip. "
+                        "Web search (Stage 4d) is agent-only and not available in this runner.")
     # Tuning
     p.add_argument("--no-llm", action="store_true", help="DOI-only dedup (skip LLM pass)")
     p.add_argument("--verify", action=argparse.BooleanOptionalAction, default=True,

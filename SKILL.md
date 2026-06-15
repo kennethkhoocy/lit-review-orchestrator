@@ -151,20 +151,25 @@ file yourself (Opus: a short JSON array of query strings) and pass it the same w
 or add `--no-condense` — either keeps the agent path free of the in-script Sonnet
 call.
 
-**Web search (keyless; the "only Claude Code" channel). Run it in parallel with the
-channels above, or as the sole channel when no search keys or logins exist.** Use
-your own WebSearch/WebFetch tools: search the Stage-0 `scholar_queries` and the
-research question on the open web, fetch promising hits (publisher / SSRN / arXiv /
-NBER / OpenAlex / Semantic Scholar pages) to read the real title, authors, year,
-venue, DOI, and abstract, and collect each candidate (only the title is required)
-into `OUT/websearch_results.json`. Do not invent fields; leave unknowns blank.
+**Web search (keyless; the "only Claude Code" channel, and a useful add-on alongside
+the keyed channels). Subagent fan-out, so the raw web text stays out of your
+context.** Emit a batched task plan, dispatch one Opus subagent per batch, then merge:
 ```bash
+python websearch-search/scripts/websearch_ingest.py --emit-tasks \
+    --queries-file OUT/scholar_queries.json --research-question "<research_question>" \
+    --batch-size 3 -o OUT/websearch_tasks.json
+# Dispatch one Opus subagent per tasks[k]: hand it the system_prompt + its queries;
+# each runs WebSearch/WebFetch over its queries and writes
+# OUT/websearch_results_batch_<id>.json (only title required; never invent fields; do
+# not fetch scholar.google.com). Then merge the partials:
 python websearch-search/scripts/websearch_ingest.py \
-    --results OUT/websearch_results.json -o OUT/stage4d_websearch.json
+    --results OUT/websearch_results_batch_*.json -o OUT/stage4d_websearch.json
 ```
-This writes `stage4d_websearch.json` (source="websearch"), which the dedup
-`--inputs` glob below picks up automatically. The hits are real web results, so keep
-Stage 5b verification ON. Full recipe: `websearch-search/SKILL.md`.
+This writes `stage4d_websearch.json` (`source="websearch"`), deduped by title with
+best-effort keyless Crossref DOI fill, which the dedup `--inputs` glob below picks up.
+The hits are real web results, so keep Stage 5b verification ON. For a few queries you
+can skip the fan-out and ingest a single `websearch_results.json`. Empty input defers
+(`WEBSEARCH_DEFERRED`). Full recipe: `websearch-search/SKILL.md`.
 
 **Free index search (keyless; pairs with web search for the no-key fallback).** A
 plain keyless subprocess that searches OpenAlex / Crossref / Semantic Scholar with
@@ -203,7 +208,9 @@ python lit-screen/scripts/lit_screen.py --input OUT/stage5_merged.json --ingest-
 python scripts/orchestrator.py <doc> --output-dir OUT
 ```
 Runs every stage end-to-end as subprocesses; the reasoning stages call the
-Anthropic API on Sonnet (DeepSeek for dedup). Use it for unattended runs or when
+Anthropic API on Sonnet (DeepSeek for dedup). The keyless free index search (Stage
+4e) runs here by default (`--no-freesearch` to skip); web search (Stage 4d) is
+agent-only and not available in this runner. Use it for unattended runs or when
 no agent is driving. It is the fallback, not the default.
 
 ### Undermind (Stage 1)

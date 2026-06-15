@@ -24,13 +24,19 @@ A bare {"papers": [...]} / {"results": [...]} / {"candidates": [...]} wrapper is
 also accepted.
 
 Usage:
-  python websearch_ingest.py --results OUT/websearch_results.json -o OUT/stage4d_websearch.json
-  python websearch_ingest.py --results OUT/websearch_results.json -o OUT/stage4d_websearch.json --no-enrich
+  # Emit batched tasks for subagent fan-out (one Opus subagent per batch):
+  python websearch_ingest.py --emit-tasks --queries-file OUT/scholar_queries.json \
+      --research-question "<rq>" --batch-size 3 -o OUT/websearch_tasks.json
+  # Merge the per-subagent partial result files into the stage output:
+  python websearch_ingest.py --results OUT/websearch_results_batch_*.json -o OUT/stage4d_websearch.json
+  # Single-file inline fallback (optionally without keyless Crossref enrichment):
+  python websearch_ingest.py --results OUT/websearch_results.json -o OUT/stage4d_websearch.json [--no-enrich]
 """
 
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import os
 import re
@@ -54,6 +60,28 @@ if _env_file.exists():
 # Polite-pool contact for Crossref (courtesy only); override via env, neutral default.
 _CONTACT = os.environ.get("LITREVIEW_CONTACT_EMAIL", "litreview-bot@example.com")
 DOI_RE = re.compile(r"10\.\d{4,9}/\S+", re.I)
+
+DEFAULT_OUTPUT = "stage4d_websearch.json"
+WEBSEARCH_SENTINEL = "WEBSEARCH_DEFERRED"
+
+# Instructions handed to each web-search subagent in the fan-out (Stage 4d). Kept
+# here so the emitted task file and the SKILL recipe stay in sync.
+WEBSEARCH_SYSTEM_PROMPT = (
+    "You are gathering REAL academic literature from the open web for a literature "
+    "review (Stage 4d). For each query in your batch, use your WebSearch tool, then "
+    "WebFetch the most promising results (publisher / SSRN / arXiv / NBER / OpenAlex / "
+    "Semantic Scholar pages) to read the real title, authors, year, venue, DOI, and "
+    "abstract.\n"
+    "Rules:\n"
+    "- Return only papers you actually found in a search result or on a fetched page. "
+    "Never invent a paper or a field.\n"
+    "- Leave any field you could not read as an empty string. Only `title` is required.\n"
+    "- Do NOT WebFetch scholar.google.com (it is bot-blocked); rely on the search "
+    "results and the underlying source pages.\n"
+    "- Peer-reviewed articles and working papers are both welcome; preprints are fine.\n"
+    "Write a JSON array of objects with keys: title, authors (\"First Last, Second "
+    "Author\"), year, journal, doi, url, abstract."
+)
 
 
 def _norm_title(t: str) -> str:
@@ -189,33 +217,106 @@ def ingest(results: list[dict], output: Path, enrich: bool = True) -> list[dict]
     return records
 
 
+def emit_tasks(queries: list[str], research_question: str, batch_size: int,
+               output: Path) -> int:
+    """Write a batched task file for the subagent fan-out; return the batch count."""
+    queries = [q.strip() for q in queries if isinstance(q, str) and q.strip()]
+    size = max(1, batch_size)
+    tasks = [{"batch_id": i // size, "queries": queries[i:i + size]}
+             for i in range(0, len(queries), size)]
+    payload = {
+        "system_prompt": WEBSEARCH_SYSTEM_PROMPT,
+        "research_question": research_question or "",
+        "tasks": tasks,
+    }
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return len(tasks)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(
-        description="Normalize agent web-search hits into pipeline JSON (Stage 4d).")
-    ap.add_argument("--results", required=True,
-                    help="JSON array of agent-gathered candidate papers (or {papers:[...]})")
-    ap.add_argument("-o", "--output", default="stage4d_websearch.json", help="Output JSON path")
+        description="Web-search channel helper (Stage 4d): emit subagent tasks, or "
+                    "normalize/merge agent-gathered hits into pipeline JSON.")
+    mode = ap.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--emit-tasks", action="store_true",
+                      help="Emit a batched task file for the subagent fan-out (with --queries-file).")
+    mode.add_argument("--results", nargs="+",
+                      help="[merge] One or more candidate-paper JSON arrays; per-subagent "
+                           "partial files are concatenated (shell globs are expanded internally, "
+                           "so PowerShell works too). A {papers|results|candidates:[...]} wrapper "
+                           "is also accepted.")
+    ap.add_argument("--queries-file",
+                    help="[emit] JSON array of query strings (e.g. scholar_queries.json).")
+    ap.add_argument("--research-question", default="",
+                    help="[emit] Research question, included in the task file for context.")
+    ap.add_argument("--batch-size", type=int, default=3,
+                    help="[emit] Queries per subagent batch (default 3).")
+    ap.add_argument("-o", "--output", default=DEFAULT_OUTPUT,
+                    help=f"Output path: [emit] the task file, [merge] the stage JSON "
+                         f"(default: {DEFAULT_OUTPUT}).")
     ap.add_argument("--no-enrich", action="store_true",
-                    help="Skip the best-effort keyless Crossref DOI fill")
+                    help="[merge] Skip the best-effort keyless Crossref DOI fill.")
     args = ap.parse_args()
 
-    p = Path(args.results)
-    if not p.is_file():
-        print(f"Error: results file not found: {p}")
-        sys.exit(1)
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-    except Exception as e:
-        print(f"Error: could not parse {p}: {e}")
-        sys.exit(1)
-    if isinstance(data, dict):  # tolerate a wrapper object
-        data = data.get("papers") or data.get("results") or data.get("candidates") or []
-    if not isinstance(data, list):
-        print("Error: results JSON must be an array (or {\"papers\": [...]}).")
-        sys.exit(1)
+    # --- Emit mode: build the batched task file for the subagent fan-out. ---
+    if args.emit_tasks:
+        if not args.queries_file:
+            ap.error("--emit-tasks requires --queries-file")
+        output = Path(args.output)
+        if args.output == DEFAULT_OUTPUT:  # give the task file a sensible name
+            output = output.with_name("websearch_tasks.json")
+        try:
+            queries = json.loads(Path(args.queries_file).read_text(encoding="utf-8"))
+            queries = [q for q in queries if isinstance(q, str)]
+        except Exception as e:
+            print(f"{WEBSEARCH_SENTINEL}: could not read --queries-file ({e}); writing empty task file.")
+            queries = []
+        n = emit_tasks(queries, args.research_question, args.batch_size, output)
+        if n == 0:
+            print(f"{WEBSEARCH_SENTINEL}: no queries to search; wrote empty task file -> {output}")
+        else:
+            kept = len([q for q in queries if q.strip()])
+            print(f"[WEBSEARCH] Emitted {n} task batches "
+                  f"({kept} queries, batch-size {args.batch_size}) -> {output}")
+        return
 
-    res = ingest(data, Path(args.output), enrich=not args.no_enrich)
-    print(f"[WEBSEARCH] Ingested {len(res)} unique papers -> {args.output}")
+    # --- Merge / ingest mode: normalize agent-gathered candidates. ---
+    # Expand any shell-unexpanded globs (PowerShell does not expand `*`), so the
+    # documented `--results ..._batch_*.json` works regardless of the calling shell.
+    files: list[str] = []
+    for rp in args.results:
+        if any(c in rp for c in "*?["):
+            m = sorted(glob.glob(rp))
+            files.extend(m if m else [rp])
+        else:
+            files.append(rp)
+    merged: list[dict] = []
+    used = 0
+    for rp in files:
+        p = Path(rp)
+        if not p.is_file():
+            print(f"[WEBSEARCH] note: results file not found, skipping: {p}")
+            continue
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except Exception as e:
+            print(f"[WEBSEARCH] note: could not parse {p} ({e}); skipping")
+            continue
+        if isinstance(data, dict):  # tolerate a wrapper object
+            data = data.get("papers") or data.get("results") or data.get("candidates") or []
+        if isinstance(data, list):
+            merged.extend(data)
+            used += 1
+        else:
+            print(f"[WEBSEARCH] note: {p} is not a JSON array; skipping")
+
+    res = ingest(merged, Path(args.output), enrich=not args.no_enrich)
+    if res:
+        print(f"[WEBSEARCH] Ingested {len(res)} unique papers from {used} file(s) -> {args.output}")
+    else:
+        # Nothing usable across all partials — defer so the pipeline continues on other channels.
+        print(f"{WEBSEARCH_SENTINEL}: no usable candidates from {used} file(s); wrote empty {args.output}")
 
 
 if __name__ == "__main__":

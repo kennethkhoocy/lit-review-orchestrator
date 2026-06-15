@@ -354,18 +354,22 @@ outage-versus-absence distinction, and the field carry-forward — were fixed an
   searches with a `site:`/`source:` filter, so they mainly force those venues to surface;
   NBER (the `nber.org` API) and citation chaining (Semantic Scholar) hit independent
   indexes and add genuine coverage.
-- **Web search (Stage 4d, keyless)** is the "only Claude Code" fallback: the agent uses its
-  own WebSearch/WebFetch to discover papers on the open web, then `websearch_ingest.py`
-  normalizes the hits into the pipeline (`source="websearch"`). It needs no search account
-  or API key, relying only on the agent's web tools plus the free OpenAlex / Crossref /
-  Semantic Scholar verification that follows. Run it alongside the other channels or on its
-  own; keep verification on, since web hits still need confirming. See
+- **Web search (Stage 4d, keyless)** discovers papers on the open web — both the "only
+  Claude Code" fallback and an add-on alongside the keyed channels. It fans out:
+  `websearch_ingest.py --emit-tasks` writes a batched task plan, one Opus subagent per batch
+  runs WebSearch/WebFetch and writes a partial candidates file (so the raw web text stays
+  out of the orchestrator's context), and `websearch_ingest.py --results` merges and dedups
+  them into the pipeline (`source="websearch"`). It needs no search account or API key,
+  relying only on the agent's web tools plus the free OpenAlex / Crossref / Semantic Scholar
+  verification that follows; keep verification on, since web hits still need confirming. For
+  a few queries you can skip the fan-out and ingest a single results file. See
   `websearch-search/SKILL.md`.
 - **Free index search (Stage 4e, keyless)** runs the extracted queries against the free
   OpenAlex / Crossref / Semantic Scholar keyword-search endpoints and normalizes the real
   records into the pipeline. No key needed (optional keys only raise rate limits). It is the
-  keyless backbone of the "only Claude Code" mode and pairs with web search; see
-  `freesearch-search/SKILL.md`.
+  keyless backbone of the "only Claude Code" mode and pairs with web search; unlike web
+  search, it also runs in the autonomous orchestrator (on by default; `--no-freesearch` to
+  skip). See `freesearch-search/SKILL.md`.
 
 ---
 
@@ -382,6 +386,7 @@ outage-versus-absence distinction, and the field carry-forward — were fixed an
 | `--scholarlabs` | off | Opt in to the Google Scholar Labs deep search (Stage 2) |
 | `--ssrn --nber --heinonline --forthcoming` | off | Opt-in supplementary sources |
 | `--citation-chain` | off | Opt-in Semantic Scholar citation chaining |
+| `--freesearch / --no-freesearch` | on | Keyless free-index search (Stage 4e); web search (Stage 4d) is agent-only, not in this runner |
 | `--no-llm` | off | DOI-only dedup (skip the LLM pass) |
 | `--verify / --no-verify` | on | Cross-check papers and drop those none can confirm; `--no-verify` keeps all |
 | `--top-seeds` | `20` | Seeds for citation chaining |
