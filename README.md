@@ -32,7 +32,7 @@ reflects what the article is actually about instead of a hand-typed keyword stri
 Several deep-search channels then run concurrently and their results are fused into
 one master list. Every reasoning step in the default mode runs on Claude Opus 4.8 at
 the agent layer with no Anthropic API key required; an autonomous fallback on the
-Sonnet/DeepSeek API exists for unattended runs.
+DeepSeek API exists for unattended runs.
 
 ## How it differs from other literature-review tools
 
