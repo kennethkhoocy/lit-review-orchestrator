@@ -232,7 +232,7 @@ dashed border marks an opt-in source, a fallback path, or an abort.*
 
 ### Pipeline overview
 
-![Pipeline overview: a document or raw query feeds Stage 0 extraction on Opus, which fans out to four concurrent search channels — Undermind, Gemini Deep Research, Google Scholar (SearchAPI), and the opt-in Scholar Labs — while a keyless group (web search, Stage 4d, and free index search, Stage 4e) and the opt-in supplementary sources and citation chaining also feed the merge; Stage 5 merges and deduplicates, Stage 5b verifies and drops unconfirmed papers to an audit file, Stage 6 screens for relevance, and the result is a ranked master list in xlsx, ris, and bib.](https://kennethkhoocy.github.io/files/lit-review-orchestrator/pipeline-overview.png?v=cf5ecadd)
+![Pipeline overview: a document or raw query feeds Stage 0 extraction on Opus, which fans out to four concurrent search channels — Undermind, Gemini Deep Research, Google Scholar (SearchAPI), and the opt-in Scholar Labs — while a keyless group (web search, Stage 4d, and free index search, Stage 4e) and the opt-in supplementary sources and citation chaining also feed the merge; Stage 5 merges and deduplicates, Stage 5b verifies and drops unconfirmed papers to an audit file, Stage 6 screens for relevance, and the result is a ranked master list in xlsx, ris, and bib.](https://kennethkhoocy.github.io/files/lit-review-orchestrator/pipeline-overview.png?v=82662f9d)
 
 Stage 0 reads the document and derives the search plan. Stages 1, 2b, and 4a (Undermind,
 Deep Research, and Google Scholar) run concurrently; Scholar Labs joins them only when
