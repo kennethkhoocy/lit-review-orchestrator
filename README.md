@@ -119,6 +119,8 @@ Everything runs without these; each adds source coverage, metadata quality, or t
 ## Quick start
 
 ```bash
+git clone https://github.com/kennethkhoocy/lit-review-orchestrator.git
+cd lit-review-orchestrator
 pip install -r requirements.txt                                  # one-time
 cp lit-review-pipeline.env.example ~/.lit-review-pipeline.env    # then fill in keys
 ```
