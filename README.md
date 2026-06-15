@@ -91,15 +91,18 @@ dedup judgments, and screening — on Opus inside the conversation, so **no Anth
 needed**, and verification and enrichment draw on the free OpenAlex / Crossref / Semantic
 Scholar pools.
 
-### Mandatory — at least one search channel
+### Search — recommended, but no key is strictly required
 
-A run can only surface papers through a channel you hold credentials for. Google Scholar
-(`SEARCHAPI_API_KEY`) is the default and the only channel in `--quick`, so it is the
-simplest baseline; Deep Research or Undermind can substitute if you prefer.
+In the agent-driven flow you can run with **zero search accounts**: two keyless fallback
+channels (agent **web search**, using the agent's own WebSearch/WebFetch, and **free index
+search** over OpenAlex / Crossref / Semantic Scholar) find real papers with no key, and
+Stage 5b verifies them. The keyed channels below are recommended for broader, higher-quality
+coverage; add whichever you have.
 
 | Variable | Search channel it unlocks |
 |----------|---------------------------|
-| `SEARCHAPI_API_KEY` | Google Scholar (Stage 4a) — default, the only channel in `--quick`, and the engine behind SSRN / HeinOnline / forthcoming |
+| _(none)_ | **Web search (Stage 4d)** + **free index search (Stage 4e)** — keyless; the "only Claude Code" fallback |
+| `SEARCHAPI_API_KEY` | Google Scholar (Stage 4a) — the default keyed channel and the only one in `--quick`; also the engine behind SSRN / HeinOnline / forthcoming |
 | `GEMINI_API_KEY` | Gemini Deep Research (Stage 2b) — default-on |
 | `UNDERMIND_EMAIL` / `UNDERMIND_PASSWORD` | Undermind deep search (Stage 1) — default-on; captured on first run via `--login` |
 
@@ -351,6 +354,18 @@ outage-versus-absence distinction, and the field carry-forward — were fixed an
   searches with a `site:`/`source:` filter, so they mainly force those venues to surface;
   NBER (the `nber.org` API) and citation chaining (Semantic Scholar) hit independent
   indexes and add genuine coverage.
+- **Web search (Stage 4d, keyless)** is the "only Claude Code" fallback: the agent uses its
+  own WebSearch/WebFetch to discover papers on the open web, then `websearch_ingest.py`
+  normalizes the hits into the pipeline (`source="websearch"`). It needs no search account
+  or API key, relying only on the agent's web tools plus the free OpenAlex / Crossref /
+  Semantic Scholar verification that follows. Run it alongside the other channels or on its
+  own; keep verification on, since web hits still need confirming. See
+  `websearch-search/SKILL.md`.
+- **Free index search (Stage 4e, keyless)** runs the extracted queries against the free
+  OpenAlex / Crossref / Semantic Scholar keyword-search endpoints and normalizes the real
+  records into the pipeline. No key needed (optional keys only raise rate limits). It is the
+  keyless backbone of the "only Claude Code" mode and pairs with web search; see
+  `freesearch-search/SKILL.md`.
 
 ---
 

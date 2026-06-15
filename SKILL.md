@@ -150,6 +150,32 @@ file yourself (Opus: a short JSON array of query strings) and pass it the same w
 or add `--no-condense` — either keeps the agent path free of the in-script Sonnet
 call.
 
+**Web search (keyless; the "only Claude Code" channel). Run it in parallel with the
+channels above, or as the sole channel when no search keys or logins exist.** Use
+your own WebSearch/WebFetch tools: search the Stage-0 `scholar_queries` and the
+research question on the open web, fetch promising hits (publisher / SSRN / arXiv /
+NBER / OpenAlex / Semantic Scholar pages) to read the real title, authors, year,
+venue, DOI, and abstract, and collect each candidate (only the title is required)
+into `OUT/websearch_results.json`. Do not invent fields; leave unknowns blank.
+```bash
+python websearch-search/scripts/websearch_ingest.py \
+    --results OUT/websearch_results.json -o OUT/stage4d_websearch.json
+```
+This writes `stage4d_websearch.json` (source="websearch"), which the dedup
+`--inputs` glob below picks up automatically. The hits are real web results, so keep
+Stage 5b verification ON. Full recipe: `websearch-search/SKILL.md`.
+
+**Free index search (keyless; pairs with web search for the no-key fallback).** A
+plain keyless subprocess that searches OpenAlex / Crossref / Semantic Scholar with
+the Stage-0 queries:
+```bash
+python freesearch-search/scripts/freesearch_search.py \
+    --queries-file OUT/scholar_queries.json -o OUT/stage4e_freesearch.json
+```
+This writes `stage4e_freesearch.json` (real index records, `source` set per index),
+which the dedup `--inputs` glob below also picks up. No key needed; see
+`freesearch-search/SKILL.md`.
+
 **Stage 5 — dedup (Opus subagents):**
 ```bash
 python lit-dedup/scripts/lit_dedup.py --inputs OUT/stage[0-9]*.json --emit-pairs OUT/dedup_pairs.json -o OUT/stage5_merged.json
