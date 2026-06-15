@@ -232,12 +232,14 @@ dashed border marks an opt-in source, a fallback path, or an abort.*
 
 ### Pipeline overview
 
-![Pipeline overview: a document or raw query feeds Stage 0 extraction on Opus, which fans out to four concurrent search channels — Undermind, Gemini Deep Research, Google Scholar (SearchAPI), and the opt-in Scholar Labs — with opt-in supplementary sources and citation chaining also feeding the merge; Stage 5 merges and deduplicates, Stage 5b verifies and drops unconfirmed papers to an audit file, Stage 6 screens for relevance, and the result is a ranked master list in xlsx, ris, and bib.](https://kennethkhoocy.github.io/files/lit-review-orchestrator/pipeline-overview.png)
+![Pipeline overview: a document or raw query feeds Stage 0 extraction on Opus, which fans out to four concurrent search channels — Undermind, Gemini Deep Research, Google Scholar (SearchAPI), and the opt-in Scholar Labs — while a keyless group (web search, Stage 4d, and free index search, Stage 4e) and the opt-in supplementary sources and citation chaining also feed the merge; Stage 5 merges and deduplicates, Stage 5b verifies and drops unconfirmed papers to an audit file, Stage 6 screens for relevance, and the result is a ranked master list in xlsx, ris, and bib.](https://kennethkhoocy.github.io/files/lit-review-orchestrator/pipeline-overview.png?v=cf5ecadd)
 
 Stage 0 reads the document and derives the search plan. Stages 1, 2b, and 4a (Undermind,
 Deep Research, and Google Scholar) run concurrently; Scholar Labs joins them only when
 opted in, and supplementary sources and citation chaining feed the merge when enabled.
-Stage 5 fuses everything and deduplicates by DOI and by an LLM fuzzy pass. Stage 5b
+The keyless channels — web search (Stage 4d) and free index search (Stage 4e) — feed the
+merge as well and are the no-key fallback that needs no search account. Stage 5 fuses
+everything and deduplicates by DOI and by an LLM fuzzy pass. Stage 5b
 verifies what survives, dropping any paper no index can confirm into
 `stage5_merged_unverified.json`. Stage 6 scores the remainder for relevance, and the
 ranked list is written in three formats.
