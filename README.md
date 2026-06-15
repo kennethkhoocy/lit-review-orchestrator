@@ -118,6 +118,20 @@ Everything runs without these; each adds source coverage, metadata quality, or t
 
 ## Quick start
 
+**Install as a Claude Code skill (recommended).** Clone the repo into your Claude Code
+skills directory and Claude Code auto-discovers it:
+
+```bash
+git clone https://github.com/kennethkhoocy/lit-review-orchestrator.git ~/.claude/skills/lit-review-orchestrator
+pip install -r ~/.claude/skills/lit-review-orchestrator/requirements.txt
+cp ~/.claude/skills/lit-review-orchestrator/lit-review-pipeline.env.example ~/.lit-review-pipeline.env
+```
+Then ask Claude Code for a literature review (or hand it a manuscript): the skill triggers,
+the settings dialog opens, and the agent-driven pipeline runs from your choices.
+
+**Or run it from the command line.** Clone it anywhere, install the dependencies, and call
+the orchestrator directly:
+
 ```bash
 git clone https://github.com/kennethkhoocy/lit-review-orchestrator.git
 cd lit-review-orchestrator
@@ -125,10 +139,8 @@ pip install -r requirements.txt                                  # one-time
 cp lit-review-pipeline.env.example ~/.lit-review-pipeline.env    # then fill in keys
 ```
 
-Trigger the skill in Claude Code and the settings dialog opens; pick the document and
-options, and the agent-driven pipeline runs from your choices. The commands below are
-the **autonomous fallback** — they run every stage end-to-end as subprocesses with the
-reasoning steps on the Sonnet/DeepSeek API:
+The commands below are the **autonomous fallback** — they run every stage end-to-end as
+subprocesses with the reasoning steps on the Sonnet/DeepSeek API:
 
 ```bash
 # From a full manuscript
