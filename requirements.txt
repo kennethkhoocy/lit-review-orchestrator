@@ -1,0 +1,14 @@
+# Lit-Review Orchestrator — Python dependencies
+# Install with:  pip install -r requirements.txt
+# After install, fetch the Chromium build Playwright needs (used by the
+# Undermind and Scholar Labs drivers):  playwright install chromium
+
+python-docx>=1.1.0        # Stage 0: parse .docx manuscripts (body + headings)
+anthropic>=0.40.0         # Stage 0 extraction, dedup fallback, screening
+requests>=2.31.0          # SearchAPI.io (Google Scholar), Crossref/OpenAlex, NBER, S2
+beautifulsoup4>=4.12.0    # supplementary source HTML parsing
+aiohttp>=3.9.0            # Stage 5 dedup (async LLM calls)
+openpyxl>=3.1.0           # Stage 6 screening .xlsx export
+python-dotenv>=1.0.0      # load ~/.lit-review-pipeline.env
+playwright>=1.40.0        # Undermind (Stage 1) + Scholar Labs (Stage 2) browser drivers
+defusedxml>=0.7.1         # Stage 0: hardened XML parsing for untrusted .docx footnotes/endnotes

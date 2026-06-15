@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Pipeline run outputs, checkpoints, and debug captures
+lit-review-output/
+debug_*/
+*_debug/
+*.checkpoint.json
+stage6_heartbeat.json
+
+# Local API key store / any real env file — NEVER commit (the template is kept)
+.lit-review-pipeline.env
+*.env
+!*.env.example
+
+# Internal audit artifacts — not shipped publicly
+AUDIT.md
+*-audit-*/
+audit-*/
+
+# Scraped reference cache
+.firecrawl/
+
+# Legacy Undermind automation captures: old dev artifacts that include login
+# screenshots, HTML page dumps, and run logs which may contain account info.
+# Kept on disk for reference, never shipped to GitHub.
+_legacy/
+
+# Stray atomic-write temp files
+*.tmp
+*.tmp.*
+
+# OS cruft
+.DS_Store
+Thumbs.db
