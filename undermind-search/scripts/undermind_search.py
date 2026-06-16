@@ -397,9 +397,10 @@ def _ask_claude(client, brief: str, history: list[dict], question: str, model: s
 def _get_answer_via_handoff(answers_dir: Path, turn: int, question: str, brief: str,
                             timeout_s: int = 900) -> str:
     """Agent-in-the-loop: write the clarifying question to a file and wait for the
-    orchestrator (Opus) to drop an answer file. Returns the answer, or "" on timeout.
+    orchestrator to drop an answer file. Returns the answer, or "" on timeout.
 
-    No Anthropic API is used — the reasoning runs in the orchestrator/subagent."""
+    No Anthropic API is used — the reasoning runs in the orchestrator's subagent
+    (Sonnet by default, Opus when all_opus is set), per the model-routing policy."""
     answers_dir.mkdir(parents=True, exist_ok=True)
     req = answers_dir / f"clarify_request_{turn}.json"
     ans = answers_dir / f"clarify_answer_{turn}.json"
@@ -410,7 +411,7 @@ def _get_answer_via_handoff(answers_dir: Path, turn: int, question: str, brief: 
         pass
     req.write_text(json.dumps({"turn": turn, "question": question, "brief": brief},
                               ensure_ascii=False, indent=2), encoding="utf-8")
-    _log(f"  [handoff] Wrote {req.name}; waiting up to {timeout_s}s for {ans.name} (Opus answer)...")
+    _log(f"  [handoff] Wrote {req.name}; waiting up to {timeout_s}s for {ans.name} (subagent answer)...")
     start = time.time()
     while time.time() - start < timeout_s:
         if ans.exists():
@@ -434,8 +435,9 @@ def answer_clarifications(page, brief: str, model: str, debug_dir: Path | None,
     """Loop: answer Undermind's clarifying questions until the topic is proposed.
 
     Two modes. When ``answers_dir`` is given, each question is handed to the
-    orchestrator/Opus through files (no API) — the agent-in-the-loop path.
-    Otherwise it is answered by the Anthropic API (Sonnet), the autonomous fallback."""
+    orchestrator's subagent through files (no API) — the agent-in-the-loop path
+    (Sonnet by default, Opus when all_opus). Otherwise it is answered by the
+    Anthropic API (Sonnet), the autonomous fallback."""
     client = None
     if answers_dir is None:
         import anthropic
@@ -712,8 +714,8 @@ def main() -> None:
                     help="Claude model for clarifying answers in API/autonomous mode")
     ap.add_argument("--answers-dir", default="",
                     help="Agent-in-the-loop: write each clarifying question to this dir "
-                         "(clarify_request_<n>.json) and wait for the orchestrator/Opus to drop "
-                         "clarify_answer_<n>.json. No Anthropic API key needed in this mode.")
+                         "(clarify_request_<n>.json) and wait for the orchestrator's subagent to "
+                         "drop clarify_answer_<n>.json. No Anthropic API key needed in this mode.")
     ap.add_argument("--headed", action="store_true", help="Show the browser (debugging)")
     ap.add_argument("--login", action="store_true",
                     help="Headed first-run setup: capture credentials to env (if missing) and verify sign-in")

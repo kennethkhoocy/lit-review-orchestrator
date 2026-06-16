@@ -30,9 +30,12 @@ The pipeline is driven by a document rather than a bare query. Given a `.tex` or
 brief, a Scholar Labs question, and a set of Google Scholar queries, so the search
 reflects what the article is actually about instead of a hand-typed keyword string.
 Several deep-search channels then run concurrently and their results are fused into
-one master list. Every reasoning step in the default mode runs on Claude Opus 4.8 at
-the agent layer with no Anthropic API key required; an autonomous fallback on the
-DeepSeek API exists for unattended runs.
+one master list. Every reasoning step in the default mode runs at the agent layer
+with no Anthropic API key required, split across two keyless models — Claude Opus 4.8
+orchestrates, extracts the search plan, runs the keyless web search, and re-ranks the
+results, while Sonnet 4.6 subagents handle the remaining steps (a GUI toggle puts
+everything on Opus). An
+autonomous fallback on the Sonnet/DeepSeek API exists for unattended runs.
 
 ## How it differs from other literature-review tools
 
@@ -47,10 +50,13 @@ DeepSeek API exists for unattended runs.
 - **Verification by default.** Stage 5b cross-checks every candidate against three
   scholarly indexes and drops what none can confirm. This is on unless you explicitly
   pass `--no-verify`.
-- **Reasoning on Opus with no Anthropic API.** The LLM steps (plan extraction, dedup
-  judgments, relevance screening, even Undermind's clarifying answers) are handed to
-  the agent through an emit/ingest seam, so the default run consumes no Anthropic
-  tokens. The API path survives only as an unattended fallback.
+- **Reasoning on Opus and Sonnet with no Anthropic API.** The LLM steps (plan
+  extraction, dedup judgments, relevance screening, the keyless web search, even
+  Undermind's clarifying answers) are handed to the agent through an emit/ingest seam,
+  so the default run consumes no Anthropic tokens. Work is routed by model: Opus 4.8
+  orchestrates, extracts the search plan, runs the keyless web search, and re-ranks,
+  while Sonnet 4.6 subagents handle the rest; a *Use Opus for all tasks* toggle promotes
+  everything to Opus. The API path survives only as an unattended fallback.
 - **Ranked, screened output.** What survives verification is scored for relevance
   against the research question and delivered as a ranked spreadsheet alongside RIS
   and BibTeX.
@@ -87,9 +93,11 @@ then `playwright install chromium` for the Undermind and Scholar Labs browser dr
 API keys live in `~/.lit-review-pipeline.env` (auto-loaded via python-dotenv; copy
 `lit-review-pipeline.env.example`), and a real shell environment variable always wins over
 the file. The default **agent-driven** flow runs the reasoning stages — Stage 0 extraction,
-dedup judgments, and screening — on Opus inside the conversation, so **no Anthropic key is
-needed**, and verification and enrichment draw on the free OpenAlex / Crossref / Semantic
-Scholar pools.
+dedup judgments, and screening — at the agent layer inside the conversation, so **no
+Anthropic key is needed**; the work is split between Opus 4.8 (orchestration, Stage 0
+plan extraction, the keyless web search, and the relevance re-ranking) and Sonnet 4.6
+subagents (everything else), with a GUI toggle to put it all on Opus, and verification and
+enrichment draw on the free OpenAlex / Crossref / Semantic Scholar pools.
 
 ### Search — recommended, but no key is strictly required
 
@@ -174,39 +182,48 @@ python scripts/lit_review_gui.py --config-out OUT/gui_config.json   # blocks unt
 ```
 
 The dialog has a **Browse** field for the document, an output folder that defaults to
-the document's own directory, an optional raw-query box, the four **search channels**
-as checkboxes (Undermind, Deep Research, and Google Scholar checked; Scholar Labs
-unchecked, since it is opt-in), **supplementary sources** (SSRN on by default, NBER and
-HeinOnline off) with citation chaining, and a **Processing** group (Deduplicate, Verify
-sources, Screen, DOI-only). On **Run** it writes the chosen configuration to
-`--config-out` and echoes it to stdout between `===LITREVIEW_CONFIG_BEGIN===` and
-`===LITREVIEW_CONFIG_END===`, exiting 0; **Cancel** or closing the window exits 2 and
-the run is aborted. The configuration is JSON:
+the document's own directory, an optional raw-query box, the **search channels** as
+checkboxes — keyed (Undermind, Deep Research, and Google Scholar checked; Scholar Labs
+unchecked, since it is opt-in) and keyless (free index search and web search, both on) —
+**supplementary sources** (SSRN on by default, NBER and HeinOnline off) with citation
+chaining, a **Processing** group (Deduplicate, Verify sources, Screen, DOI-only), and an
+**Advanced** group (Quick mode, Max chars, and a *Use Opus for all tasks* toggle, off by
+default). On **Run** it writes the chosen configuration to `--config-out` and echoes it to
+stdout between `===LITREVIEW_CONFIG_BEGIN===` and `===LITREVIEW_CONFIG_END===`, exiting 0;
+**Cancel** or closing the window exits 2 and the run is aborted. The configuration is JSON:
 
 ```json
 {"document":"…","query":"","output_dir":"…",
- "channels":{"undermind":true,"deepresearch":true,"scholar":true,"scholarlabs":false},
+ "channels":{"undermind":true,"deepresearch":true,"scholar":true,"scholarlabs":false,"freesearch":true,"websearch":true},
  "supplementary":{"ssrn":true,"nber":false,"heinonline":false},
  "citation_chain":false,"top_seeds":20,
- "dedup":true,"verify":true,"screen":true,"no_llm":false,"quick":false,"max_chars":30000}
+ "dedup":true,"verify":true,"screen":true,"no_llm":false,"quick":false,"max_chars":30000,"all_opus":false}
 ```
 
 Claude parses that JSON and maps it onto the stages: a channel set `false` is skipped,
 `output_dir` is honoured, Scholar Labs / supplementary / citation run when `true`,
 `--no-verify` is passed to dedup when `verify` is false, `--no-llm` when `no_llm` is
-true, dedup and screen are skipped when false, and `max_chars` is passed to extraction.
+true, dedup and screen are skipped when false, `max_chars` is passed to extraction, and
+when `all_opus` is true every subagent is dispatched on Opus instead of the default
+Opus/Sonnet split (see *The agent-driven run* below).
 
 ### The agent-driven run
 
-This is the default. Every deterministic stage runs as a subprocess, and the four
-reasoning stages (plan extraction, dedup judgments, relevance screening, and
-Undermind's clarifying answers) are performed by Claude Opus 4.8 — the orchestrator and
-the subagents it spawns — with no Anthropic API key. A Python subprocess cannot spawn
-subagents, so each reasoning script exposes an **emit/ingest seam**: the script does the
-deterministic work (parsing, candidate-pair generation, validation, enrichment, merge,
-and all file output) and hands only the LLM step out to the agent in the middle, reading
-the agent's answer back to finish. The full stage-by-stage commands are in
-[`SKILL.md`](SKILL.md).
+This is the default. Every deterministic stage runs as a subprocess, and the reasoning
+stages (plan extraction, dedup judgments, relevance screening, the keyless web search, and
+Undermind's clarifying answers) are performed by the agent — the orchestrator and the
+subagents it spawns — with no Anthropic API key. The work is routed by model: **Opus 4.8**
+orchestrates the run, extracts the search plan (Stage 0), drives the keyless web search
+(Stage 4d), and re-ranks the results (Stage 6 screening), while **Sonnet 4.6** subagents
+handle the rest (Stage 4a query writing, Stage 5 dedup judgments, and Undermind's
+clarifying answers).
+Checking *Use Opus for all tasks* in the GUI (`"all_opus": true`) promotes every subagent
+to Opus, reproducing the original all-Opus behavior; both models run keyless either way. A
+Python subprocess cannot spawn subagents, so each reasoning script exposes an
+**emit/ingest seam**: the script does the deterministic work (parsing, candidate-pair
+generation, validation, enrichment, merge, and all file output) and hands only the LLM step
+out to the agent in the middle, reading the agent's answer back to finish. The full
+stage-by-stage commands are in [`SKILL.md`](SKILL.md).
 
 ### The autonomous fallback
 
@@ -225,14 +242,14 @@ present.
 
 *The diagrams below are hosted PNGs, rendered from the Excalidraw sources in
 [`docs/images/`](docs/images). Node fill colour encodes role: **blue** = input or
-Claude (Opus) reasoning, **gray** = deterministic (non-LLM) stages and drivers,
+Claude (Opus/Sonnet) reasoning, **gray** = deterministic (non-LLM) stages and drivers,
 **yellow** = artefacts (prompt/result files, the dropped-papers audit), **purple** =
 data (papers), **green** = terminal output, and a **peach diamond** = a decision. A
 dashed border marks an opt-in source, a fallback path, or an abort.*
 
 ### Pipeline overview
 
-![Pipeline overview: a document or raw query feeds Stage 0 extraction on Opus, which fans out to four concurrent search channels — Undermind, Gemini Deep Research, Google Scholar (SearchAPI), and the opt-in Scholar Labs — while a keyless group (web search, Stage 4d, and free index search, Stage 4e) and the opt-in supplementary sources and citation chaining also feed the merge; Stage 5 merges and deduplicates, Stage 5b verifies and drops unconfirmed papers to an audit file, Stage 6 screens for relevance, and the result is a ranked master list in xlsx, ris, and bib.](https://kennethkhoocy.github.io/files/lit-review-orchestrator/pipeline-overview.png?v=82662f9d)
+![Pipeline overview: a document or raw query feeds Stage 0 extraction on Opus, which fans out to four concurrent search channels — Undermind, Gemini Deep Research, Google Scholar (SearchAPI), and the opt-in Scholar Labs — while a keyless group (web search, Stage 4d, and free index search, Stage 4e) and the opt-in supplementary sources and citation chaining also feed the merge; Stage 5 merges and deduplicates, Stage 5b verifies and drops unconfirmed papers to an audit file, Stage 6 screens for relevance, and the result is a ranked master list in xlsx, ris, and bib.](https://kennethkhoocy.github.io/files/lit-review-orchestrator/pipeline-overview.png?v=368de28b)
 
 Stage 0 reads the document and derives the search plan. Stages 1, 2b, and 4a (Undermind,
 Deep Research, and Google Scholar) run concurrently; Scholar Labs joins them only when
@@ -246,12 +263,14 @@ ranked list is written in three formats.
 
 ### The agent-driven seam
 
-![The agent-driven emit/ingest seam: a deterministic stage script parses input and generates a tasks file, emits it as a prompt/tasks JSON artefact, the LLM step is performed by Opus (the orchestrator plus parallel subagents) with zero Anthropic API, the result is written to a verdicts/results JSON artefact, and the same script resumes to validate and merge into the stage output; a dashed autonomous fallback shows that without an agent, the Sonnet/DeepSeek API performs the same LLM step in-process.](https://kennethkhoocy.github.io/files/lit-review-orchestrator/agent-driven-seam.png)
+![The agent-driven emit/ingest seam: a deterministic stage script parses input and generates a tasks file, emits it as a prompt/tasks JSON artefact, the LLM step is performed by the routed model (Sonnet subagents by default, Opus for Stage 0 extraction, the keyless web search, and the Stage 6 re-ranker, or all-Opus when the all_opus toggle is set) with zero Anthropic API, the result is written to a verdicts/results JSON artefact, and the same script resumes to validate and merge into the stage output; a dashed autonomous fallback shows that without an agent, the Sonnet/DeepSeek API performs the same LLM step in-process.](https://kennethkhoocy.github.io/files/lit-review-orchestrator/agent-driven-seam.png?v=35d20ea3)
 
 Each reasoning stage is split at the point where judgment is needed. The script handles
 everything deterministic and writes a tasks file (`extract_prompt.txt`,
 `dedup_pairs.json`, `screen_tasks.json`); the agent reads it, performs the reasoning on
-Opus — fanning out across parallel subagents for large task sets — and writes the
+the routed model — fanning out across parallel subagents for large task sets (Sonnet by
+default; Opus for Stage 0 extraction, the keyless web search, and the re-ranker, or for
+everything when `all_opus` is set) — and writes the
 results back (`plan.json`, `dedup_verdicts.json`, `screen_results.json`); the script
 then ingests the results and produces the stage output. Because the seam is a pair of
 files, the same scripts support the autonomous fallback unchanged: when no agent is
@@ -339,8 +358,9 @@ outage-versus-absence distinction, and the field carry-forward — were fixed an
 ## Search channels
 
 - **Undermind (Stage 1)** drives the Undermind.ai Classic deep search through Playwright,
-  signing in with stored credentials, answering the clarifying questions on Opus through
-  a file handshake, generating the report, and exporting the references. If login or
+  signing in with stored credentials, answering the clarifying questions with a Sonnet
+  subagent (Opus when `all_opus`) through a file handshake, generating the report, and
+  exporting the references. If login or
   export fails it degrades gracefully (`UNDERMIND_DEFERRED`, empty results) and the
   pipeline continues.
 - **Deep Research (Stage 2b)** is the Gemini Deep Research Agent via the Interactions API,

@@ -295,13 +295,14 @@ def main() -> None:
                     help="Max manuscript characters sent to the model (default: 30000)")
     ap.add_argument("--emit-prompt", metavar="PATH",
                     help="Agent-driven mode: write the fully-built extraction prompt to PATH and "
-                         "exit (no API call). Complete it with Opus, then pass it via --plan-file.")
+                         "exit (no API call). Complete it with the agent (on Opus per the "
+                         "orchestrator's model routing), then pass it via --plan-file.")
     ap.add_argument("--plan-file", metavar="PATH",
-                    help="Agent-driven mode: read an Opus-produced plan JSON from PATH, validate it, "
+                    help="Agent-driven mode: read the agent-produced plan JSON from PATH, validate it, "
                          "and write all Stage-0 outputs (no API call).")
     args = ap.parse_args()
 
-    # Agent-driven ingest: validate an Opus-produced plan and write outputs (no API).
+    # Agent-driven ingest: validate the agent-produced plan and write outputs (no API).
     if args.plan_file:
         plan = json.loads(Path(args.plan_file).read_text(encoding="utf-8"))
         problems = validate_plan(plan)
@@ -322,11 +323,11 @@ def main() -> None:
     print(f"[EXTRACT] {meta['format']} | {meta['n_sections']} sections | "
           f"{meta['n_footnotes']} footnotes | {meta['salient_chars']} salient chars")
 
-    # Agent-driven emit: write the prompt for Opus to complete (no API).
+    # Agent-driven emit: write the prompt for the agent to complete (no API).
     if args.emit_prompt:
         Path(args.emit_prompt).write_text(PROMPT_TEMPLATE.format(salient=salient), encoding="utf-8")
         print(f"[EXTRACT] Wrote extraction prompt to {args.emit_prompt} "
-              f"({meta['salient_chars']} salient chars). Complete with Opus, then --plan-file.")
+              f"({meta['salient_chars']} salient chars). Complete with the agent, then --plan-file.")
         return
 
     print(f"[EXTRACT] Extracting search plan via {args.model}...")

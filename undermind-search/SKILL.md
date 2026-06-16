@@ -45,7 +45,8 @@ python scripts/undermind_ingest.py --input references.bib -o stage1_undermind.js
 
 `app.undermind.ai` → (auto-login if needed) → sidebar **Classic** → **Search** →
 type the brief into "I want to find…" → answer Undermind's clarifying questions
-(Opus via `--answers-dir`, or the Sonnet API as fallback) → **Generate Research
+(a Sonnet subagent by default, Opus when `all_opus`, via `--answers-dir`; or the
+Sonnet API as the standalone fallback) → **Generate Research
 Report** → wait for the report → **Export → BibTeX**
 → parse + enrich → `stage1_undermind.json` (+ `.bib`).
 
@@ -70,8 +71,9 @@ from the stored credentials.
 
 **Answering clarifying questions — two modes.** In the orchestrator's agent-driven
 flow, pass `--answers-dir DIR`: the driver writes each question to
-`clarify_request_<n>.json` and waits for the orchestrator/Opus to drop
-`clarify_answer_<n>.json` (`{"answer": "..."}`), then types it — no API key is
+`clarify_request_<n>.json` and waits for the orchestrator to drop
+`clarify_answer_<n>.json` (`{"answer": "..."}`) — produced by a Sonnet subagent by
+default, or Opus when `all_opus` — then types it — no API key is
 used, and the stage is interactive in this mode. Without `--answers-dir`
 (standalone or autonomous fallback) the driver answers with the Anthropic API
 (Sonnet), which requires `ANTHROPIC_API_KEY`.
@@ -87,7 +89,7 @@ used, and the stage is interactive in this mode. Without `--answers-dir`
 | `--format {bibtex,ris}` | `bibtex` | Format to export from Undermind |
 | `--user-data-dir PATH` | `~/.undermind-profile` | Persistent browser profile |
 | `--model ID` | `claude-sonnet-4-6` | Model for clarifying answers in API/autonomous mode |
-| `--answers-dir PATH` | — | Agent-in-the-loop: hand clarifying questions to Opus via files (no API); the orchestrator default |
+| `--answers-dir PATH` | — | Agent-in-the-loop: hand clarifying questions to a subagent via files (no API), Sonnet by default / Opus when `all_opus`; the orchestrator default |
 | `--headed` | off | Show the browser (debugging) |
 | `--login` | off | First-run setup: capture credentials + verify sign-in (headed) |
 | `--no-enrich` | off | Skip Crossref/OpenAlex enrichment |

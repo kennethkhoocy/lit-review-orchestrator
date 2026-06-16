@@ -1370,10 +1370,10 @@ async def _enrich_dois(papers: list[dict], log_path: Path | None = None) -> dict
 # ── Main ────────────────────────────────────────────────────────────────────
 
 def _run_ingest(args) -> None:
-    """Agent-driven ingest: merge Opus pair verdicts and write all dedup outputs.
+    """Agent-driven ingest: merge the subagent pair verdicts and write all dedup outputs.
 
-    Reads an --emit-pairs file (the after-DOI papers + candidate pairs) and an
-    Opus verdicts JSON, runs the same union-find merge as the autonomous path,
+    Reads an --emit-pairs file (the after-DOI papers + candidate pairs) and the
+    subagent verdicts JSON, runs the same union-find merge as the autonomous path,
     and writes JSON / RIS / dedup_log.json / dedup_report.md. No API call.
     """
     emit_path, verdicts_path = args.ingest_verdicts
@@ -1743,7 +1743,7 @@ def main():
                         help="Agent-driven mode: run prepare + DOI dedup, write candidate pairs to "
                              "PATH, and exit before the LLM pass (no API call).")
     parser.add_argument("--ingest-verdicts", nargs=2, metavar=("EMIT", "VERDICTS"),
-                        help="Agent-driven mode: read an --emit-pairs file plus an Opus verdicts "
+                        help="Agent-driven mode: read an --emit-pairs file plus the subagent verdicts "
                              "JSON, run the union-find merge, and write all outputs (no API call).")
 
     args = parser.parse_args()
@@ -1998,7 +1998,7 @@ def main():
     doi_merged_count = len(output_papers) - len(after_doi)
     print(f"  After DOI dedup: {len(after_doi)} ({doi_merged_count} merged)")
 
-    # ── Agent-driven emit: dump candidate pairs for Opus to judge, then stop ──
+    # ── Agent-driven emit: dump candidate pairs for the subagent to judge, then stop ──
     if args.emit_pairs:
         pairs = _build_candidate_pairs(after_doi)
         emit = {

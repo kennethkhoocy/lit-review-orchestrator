@@ -2,7 +2,9 @@
 name: lit-screen
 description: >
   Stage 6 of the lit review pipeline: screen paper abstracts against the
-  research prompt using Claude Sonnet. Rates relevance 1-10, tags each paper
+  research prompt. The orchestrator's agent-driven flow runs this re-ranker on
+  Opus subagents; a standalone run uses the in-script Claude Sonnet API fallback.
+  Rates relevance 1-10, tags each paper
   as theoretical/empirical, identifies methodology, and classifies relationship
   to user's work. Only use this skill when explicitly requested -- e.g., the
   user says "run lit-screen", "lit-screen", or "/lit-screen". Do NOT

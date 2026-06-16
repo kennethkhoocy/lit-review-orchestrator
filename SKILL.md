@@ -25,8 +25,9 @@ extracted search plan and all intermediate stage files.
 
 The `orchestrator.py` commands below are the **autonomous fallback** (reasoning on
 the Sonnet/DeepSeek API). When Claude runs this skill it uses the **agent-driven
-flow** instead — see *How it runs* below — which keeps every non-browser reasoning
-step on Opus 4.8 with no API key.
+flow** instead — see *How it runs* below — which runs every non-browser reasoning
+step at the agent layer with no API key, splitting the work between Opus 4.8 and
+Sonnet 4.6 subagents (see *Model routing*).
 
 ```bash
 pip install -r requirements.txt                                  # one-time
@@ -66,10 +67,12 @@ Stage 0 runs first; Stages 1, 2b, and 4a run concurrently (Stage 2 Scholar Labs 
 
 LLM work follows one routing rule: **the agent-driven flow uses no Anthropic API
 at all.** Every LLM step — Stage 0 extraction, Stage 4 query condensation, Stage 5
-dedup judgments, Stage 6 screening, and even Undermind's clarifying answers — runs
-on Opus 4.8 at the agent layer (you, the orchestrator, or subagents you spawn).
+dedup judgments, Stage 6 screening, the keyless web search, and even Undermind's
+clarifying answers — runs at the agent layer (you, the orchestrator, plus the Opus
+and Sonnet subagents you spawn through the Task/Agent tool, none of which consume an
+Anthropic API key). Which model each step uses is set by *Model routing* below.
 Undermind is a subprocess that owns the live browser, so its clarifying questions
-come back to Opus through a small file handshake (`--answers-dir`): the driver
+come back to the agent through a small file handshake (`--answers-dir`): the driver
 writes each question to a file and types whatever answer you drop back. The
 Sonnet/DeepSeek API path survives only as the **autonomous fallback**
 (`orchestrator.py`), for unattended runs with no agent present.
@@ -81,6 +84,31 @@ hands only the LLM step out to you in the middle. Each script also keeps its
 in-script Sonnet/DeepSeek API path as an **autonomous fallback** for unattended
 runs, so nothing is lost when no agent is present.
 
+### Model routing (agent-driven flow)
+
+Reasoning is split across two keyless models, both dispatched through the Claude
+Code Task/Agent tool (no Anthropic API key, no search account):
+
+| Role / stage | Model | How it is dispatched |
+|--------------|-------|----------------------|
+| Orchestrator — coordinate the run, parse the GUI config, fan out, merge | **Opus 4.8** | the main session (this conversation) |
+| Stage 0 — extract the search plan | **Opus 4.8** | the orchestrator itself, or an Opus subagent |
+| Keyless web search — Stage 4d subagent fan-out | **Opus 4.8** | one Opus subagent per batch |
+| Re-ranker — Stage 6 relevance screening | **Opus 4.8** | parallel Opus subagents |
+| Everything else — Stage 4a query writing / condensation, Stage 5 dedup judgments, Undermind clarifying answers | **Sonnet 4.6** (default) | one Sonnet subagent per task (spawn with `model: "sonnet"`) |
+
+Sonnet is the default for the "everything else" group because those steps are
+high-volume, comparatively low-stakes judgments; Opus is reserved for the
+orchestration, the search-plan extraction, the open-web search, and the final
+relevance ranking. Both models run keyless, so the zero-API-key property holds
+either way.
+
+**Override — use Opus everywhere.** When the GUI's *Use Opus for all tasks* box is
+checked, the config carries `"all_opus": true`; dispatch **every** subagent on Opus
+4.8, so the Sonnet defaults above are promoted to Opus and the run reproduces the
+original all-Opus behavior. The keyless property is unchanged. When `all_opus` is
+false or absent, follow the split in the table.
+
 ### Interactive entry (GUI)
 
 When the skill is triggered interactively, open the settings dialog first, let the
@@ -90,36 +118,44 @@ what it returns:
 python scripts/lit_review_gui.py --config-out OUT/gui_config.json   # blocks until Run/Cancel
 ```
 The window has a **Browse** field for the document (or a raw-query box), an output
-folder, the four **search channels** as checkboxes (Undermind / Deep Research /
-Google Scholar checked; Scholar Labs unchecked — opt-in), **supplementary sources**
+folder, the **search channels** as checkboxes — keyed (Undermind / Deep Research /
+Google Scholar checked; Scholar Labs unchecked — opt-in) and keyless (Free index
+search / Web search, both on) — **supplementary sources**
 (SSRN checked by default, NBER, HeinOnline) plus citation chaining, **Processing**
-(Deduplicate / Verify sources / Screen / DOI-only), and a live config preview. On
+(Deduplicate / Verify sources / Screen / DOI-only), and an **Advanced** group (Quick
+mode, Max chars, and a *Use Opus for all tasks* toggle that is off by default —
+leave it off to run the default Opus/Sonnet split from *Model routing*, check it to
+put every subagent on Opus). On
 **Run** it writes the settings to `--config-out` *and* echoes them to stdout
 between `===LITREVIEW_CONFIG_BEGIN===` and `===LITREVIEW_CONFIG_END===` (exit 0);
 **Cancel** or closing the window exits 2 — abort the run. Parse that JSON and map it
 onto the stages: skip a channel set `false`, set `output_dir`, run Scholar Labs /
 supplementary / citation and the keyless `freesearch` (Stage 4e) / `websearch`
 (Stage 4d) channels when `true`, pass `--no-verify` to dedup when `verify` is
-false and `--no-llm` when `no_llm` is true, skip dedup/screen when false, and pass
-`max_chars` to extraction. The GUI runs nothing itself and calls no API. Shape:
+false and `--no-llm` when `no_llm` is true, skip dedup/screen when false, pass
+`max_chars` to extraction, and — when `all_opus` is true — dispatch every subagent
+on Opus instead of the default Sonnet split (see *Model routing*). The GUI runs
+nothing itself and calls no API. Shape:
 ```json
 {"document":"…","query":"","output_dir":"…",
  "channels":{"undermind":true,"deepresearch":true,"scholar":true,"scholarlabs":false,"freesearch":true,"websearch":true},
  "supplementary":{"ssrn":true,"nber":false,"heinonline":false},
  "citation_chain":false,"top_seeds":20,
- "dedup":true,"verify":true,"screen":true,"no_llm":false,"quick":false,"max_chars":30000}
+ "dedup":true,"verify":true,"screen":true,"no_llm":false,"quick":false,"max_chars":30000,"all_opus":false}
 ```
 
 ### Agent-driven run (the default — you orchestrate)
 
 Pick an output dir `OUT`. Run the deterministic stages as subprocesses and do the
-four reasoning stages with Opus. Substitute `<doc>` and the extracted
-`<research_question>`.
+reasoning stages on the models set in *Model routing* above — Sonnet subagents by
+default, with Opus for the orchestrator, Stage 0 extraction, the keyless web search,
+and the re-ranker, or for everything when `all_opus` is set. Substitute `<doc>` and
+the extracted `<research_question>`.
 
 **Stage 0 — extract (you, Opus):**
 ```bash
 python scripts/extract_search_plan.py <doc> --emit-prompt OUT/extract_prompt.txt -o OUT/search_plan.json
-# Read OUT/extract_prompt.txt, produce the plan JSON yourself (Opus), write OUT/plan.json.
+# Read OUT/extract_prompt.txt, produce the plan JSON on Opus (yourself or an Opus subagent), write OUT/plan.json.
 python scripts/extract_search_plan.py <doc> --plan-file OUT/plan.json -o OUT/search_plan.json
 ```
 The plan JSON must carry `extract_search_plan.py`'s `REQUIRED_KEYS`; `--plan-file`
@@ -131,8 +167,8 @@ scholar_queries.json, undermind_brief.txt, scholarlabs_query.txt.
 python undermind-search/scripts/undermind_search.py --brief-file OUT/undermind_brief.txt \
     -o OUT/stage1_undermind.json --debug-dir OUT/debug_undermind --answers-dir OUT/undermind_clarify
 # Agent-in-the-loop, no API: while it runs, watch OUT/undermind_clarify for clarify_request_<n>.json.
-# When one appears, answer the question with Opus (grounded in the brief and the Stage-0
-# undermind_clarifications) and write OUT/undermind_clarify/clarify_answer_<n>.json = {"answer": "..."}.
+# When one appears, answer the question with a Sonnet subagent (Opus when all_opus), grounded in the
+# brief and the Stage-0 undermind_clarifications, and write OUT/undermind_clarify/clarify_answer_<n>.json = {"answer": "..."}.
 # Practical pattern: launch a background job that blocks until the request file exists (so you are
 # notified), answer it, then re-arm for the next turn. Undermind is interactive in this mode.
 # Opt-in only (Scholar Labs): Google rate-limits its Cite export under automation, so skip it by
@@ -144,16 +180,18 @@ python deepresearch-search/scripts/deepresearch_search.py --query-file OUT/under
 python supplementary-search/scripts/supplementary_search.py --scholar \
     --queries-file OUT/scholar_queries.json -o OUT/stage4a_scholar.json --debug-dir OUT/debug_scholar
 ```
-Passing `--queries-file` (your Opus-written queries) bypasses the Sonnet
-`condense_query` fallback in supplementary-search. For a raw-query agent run (no
-document, hence no Stage 0 to produce `scholar_queries.json`), first write that
-file yourself (Opus: a short JSON array of query strings) and pass it the same way,
-or add `--no-condense` — either keeps the agent path free of the in-script Sonnet
-call.
+Passing `--queries-file` (the agent-written queries — a Sonnet subagent by default,
+Opus when `all_opus`) bypasses the in-script `condense_query` fallback in
+supplementary-search. For a raw-query agent run (no document, hence no Stage 0 to
+produce `scholar_queries.json`), first have a Sonnet subagent write that file (a
+short JSON array of query strings) and pass it the same way, or add `--no-condense`
+— either keeps the agent path free of the in-script API call.
 
 **Web search (keyless; the "only Claude Code" channel, and a useful add-on alongside
 the keyed channels). Subagent fan-out, so the raw web text stays out of your
-context.** Emit a batched task plan, dispatch one Opus subagent per batch, then merge:
+context.** This is the *keyless search* in *Model routing* — it runs on **Opus**
+regardless of `all_opus`. Emit a batched task plan, dispatch one Opus subagent per
+batch, then merge:
 ```bash
 python websearch-search/scripts/websearch_ingest.py --emit-tasks \
     --queries-file OUT/scholar_queries.json --research-question "<research_question>" \
@@ -182,18 +220,18 @@ This writes `stage4e_freesearch.json` (real index records, `source` set per inde
 which the dedup `--inputs` glob below also picks up. No key needed; see
 `freesearch-search/SKILL.md`.
 
-**Stage 5 — dedup (Opus subagents):**
+**Stage 5 — dedup (Sonnet subagents by default; Opus when `all_opus`):**
 ```bash
 python lit-dedup/scripts/lit_dedup.py --inputs OUT/stage[0-9]*.json --emit-pairs OUT/dedup_pairs.json -o OUT/stage5_merged.json
 # Read OUT/dedup_pairs.json; for each pairs[k] = {i, j, a, b} decide if a and b are the
-# same paper. Fan out across parallel Opus subagents for large pair sets. Write
+# same paper. Fan out across parallel Sonnet subagents (Opus when all_opus) for large pair sets. Write
 # OUT/dedup_verdicts.json = [{"i":N,"j":N,"decision":"yes|no","confidence":"high|medium|low","rationale":"..."}].
 python lit-dedup/scripts/lit_dedup.py --ingest-verdicts OUT/dedup_pairs.json OUT/dedup_verdicts.json -o OUT/stage5_merged.json
 ```
 Exclude `stage5_*` / `stage6_*` from the `--inputs` glob. If `dedup_pairs.json` has
 no pairs, write `[]` to the verdicts file and still run `--ingest-verdicts`.
 
-**Stage 6 — screen (Opus subagents):**
+**Stage 6 — screen (the re-ranker — Opus subagents, regardless of `all_opus`):**
 ```bash
 python lit-screen/scripts/lit_screen.py --input OUT/stage5_merged.json --query "<research_question>" \
     --emit-tasks OUT/screen_tasks.json -o OUT/stage6_screened.json

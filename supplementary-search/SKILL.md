@@ -122,8 +122,9 @@ streams. Each condensed query is run per source, and results are deduplicated.
 - NBER also uses condensed queries (one API call per condensed query)
 
 In the orchestrator's agent-driven flow the orchestrator passes `--queries-file`
-with Opus-written queries, bypassing `condense_query` entirely; the Claude Sonnet
-condensation here is the autonomous fallback for standalone raw-query runs.
+with agent-written queries (a Sonnet subagent by default, Opus when `all_opus`),
+bypassing `condense_query` entirely; the in-script Claude Sonnet condensation here is
+the autonomous fallback for standalone raw-query runs.
 
 ## Important
 

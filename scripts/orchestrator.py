@@ -34,10 +34,12 @@ A raw query (no manuscript) is still supported via --query, which skips Stage 0.
 
 This orchestrator is the AUTONOMOUS FALLBACK: it runs every stage as a subprocess,
 and the reasoning stages (extract, dedup, screen) call the Anthropic API on Sonnet
-(DeepSeek for dedup). The default agent-driven flow — where Opus 4.8 (the
-orchestrator agent plus subagents) performs those reasoning stages through each
-script's emit/ingest seam, with Sonnet used only for Undermind's in-browser
-clarifying answers — is documented in SKILL.md ("How it runs").
+(DeepSeek for dedup). The default agent-driven flow performs those reasoning stages
+at the agent layer through each script's emit/ingest seam, routed by model — Opus 4.8
+for the orchestrator, Stage 0 extraction, the keyless web search, and Stage 6
+re-ranking; Sonnet 4.6 subagents for the rest (Stage 4a query writing, Stage 5 dedup,
+Undermind clarifying answers); the GUI all_opus toggle puts everything on Opus — and
+is documented in SKILL.md ("How it runs" -> "Model routing").
 """
 
 from __future__ import annotations

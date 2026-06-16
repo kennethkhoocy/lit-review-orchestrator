@@ -56,7 +56,7 @@ pip install aiohttp
 | `--no-llm` | off | Skip Pass 2 (DOI-only dedup) |
 | `--yes` | off | Skip HITL confirmation checkpoint |
 | `--emit-pairs PATH` | — | Agent-driven: write candidate pairs to PATH and stop before the LLM pass (no API) |
-| `--ingest-verdicts EMIT VERDICTS` | — | Agent-driven: merge Opus pair verdicts and write all outputs (no API) |
+| `--ingest-verdicts EMIT VERDICTS` | — | Agent-driven: merge the subagent pair verdicts and write all outputs (no API) |
 
 ## Two-Pass Dedup
 
@@ -68,12 +68,13 @@ pip install aiohttp
 
 ## Model routing (agent-driven default)
 
-In the orchestrator's agent-driven flow the Pass-2 same-paper judgment is made by
-an **Opus subagent**, not the API. Run `--emit-pairs` to dump the candidate pairs,
-judge each `{i, j, a, b}` pair with Opus (yes/no duplicate), then `--ingest-verdicts`
-to run the union-find merge and write every output. The DeepSeek/Sonnet API path
-is the autonomous fallback for standalone runs. See the orchestrator SKILL.md
-("How it runs").
+In the orchestrator's agent-driven flow the Pass-2 same-paper judgment is made by a
+**subagent**, not the API — a **Sonnet subagent by default**, promoted to **Opus**
+when the GUI's *Use Opus for all tasks* (`all_opus`) is set. Run `--emit-pairs` to
+dump the candidate pairs, judge each `{i, j, a, b}` pair with the subagent (yes/no
+duplicate), then `--ingest-verdicts` to run the union-find merge and write every
+output. The DeepSeek/Sonnet API path is the autonomous fallback for standalone runs.
+See the orchestrator SKILL.md ("How it runs" → "Model routing").
 
 ## Output Schema
 
