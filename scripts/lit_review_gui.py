@@ -159,11 +159,12 @@ class App(tk.Tk):
         self.var_maxchars = tk.IntVar(value=30000)
         ttk.Spinbox(adv, from_=2000, to=200000, increment=1000, width=8,
                     textvariable=self.var_maxchars).grid(row=0, column=2, sticky="w")
-        # Model routing: off = Opus orchestrates / runs the keyless web search / re-ranks,
-        # Sonnet subagents do the rest; on = every subagent runs on Opus. Both stay keyless.
+        # Model routing: off = Opus orchestrates / extracts (Stage 0) / runs the keyless
+        # web search / re-ranks, Sonnet subagents do the rest; on = every subagent runs on
+        # Opus. Both stay keyless.
         self.vars["all_opus"] = tk.BooleanVar(value=False)
         ttk.Checkbutton(
-            adv, text="Use Opus for all tasks  (default: Opus orchestrates / web search / re-ranks, Sonnet does the rest)",
+            adv, text="Use Opus for all tasks  (default: Opus orchestrates / extracts / web search / re-ranks, Sonnet does the rest)",
             variable=self.vars["all_opus"], command=self._on_change,
         ).grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=2)
 
