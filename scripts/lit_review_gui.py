@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Lit-Review Orchestrator -- interactive settings dialog (the Stage 0 front door).
 
-Claude Code launches this when the lit-review-orchestrator skill is invoked. It
-collects the input document (or a raw query) and the run options, then hands the
-choices back to the Claude Code session as JSON -- written to ``--config-out`` and
-echoed to stdout between sentinel markers. It runs nothing and calls no API;
-Claude then drives the agent-driven pipeline honouring these settings.
+Claude Code or Codex launches this when the lit-review-orchestrator skill is
+invoked. It collects the input document (or a raw query) and the run options,
+then hands the choices back to the agent session as JSON -- written to
+``--config-out`` and echoed to stdout between sentinel markers. It runs nothing
+and calls no API; the host agent then drives the agent-driven pipeline honoring
+these settings.
 
 Exit codes: 0 = Run (config emitted), 2 = Cancel / window closed (abort the run).
 """
@@ -33,13 +34,13 @@ CHANNELS = [
     ("scholar", "Google Scholar", "Stage 4a · SearchAPI", True),
     ("scholarlabs", "Scholar Labs", "Stage 2 · opt-in, rate-limited", False),
 ]
-# Keyless channels — no API key or login needed (the "only Claude Code" path).
+# Keyless channels — no API key or login needed.
 # Both default on: free index search is a fast keyless subprocess, and web search
-# uses the agent's own WebSearch/WebFetch tools for broad open-web coverage.
+# uses the host agent's web-search or browser tools for broad open-web coverage.
 # key, label, description, default-checked
 KEYLESS_CHANNELS = [
     ("freesearch", "Free index search", "Stage 4e · OpenAlex/Crossref/S2", True),
-    ("websearch", "Web search", "Stage 4d · agent WebSearch", True),
+    ("websearch", "Web search", "Stage 4d · keyless agent web search", True),
 ]
 # key, label, default-checked. SSRN defaults on (targets the real ssrn.com repo).
 # "forthcoming" is intentionally absent: it is not a source, just a Google Scholar
@@ -62,7 +63,7 @@ class App(tk.Tk):
         self._build()
         self._sync_states()
         self.protocol("WM_DELETE_WINDOW", self._cancel)
-        # Pop to front when launched by Claude Code (window can otherwise open behind).
+        # Pop to front when launched by an agent (window can otherwise open behind).
         self.lift()
         self.attributes("-topmost", True)
         self.after(600, lambda: self.attributes("-topmost", False))
@@ -73,7 +74,7 @@ class App(tk.Tk):
         root = ttk.Frame(self)
         root.pack(fill="both", expand=True, padx=10, pady=10)
 
-        ttk.Label(root, text="Settings are returned to the Claude Code session, which then "
+        ttk.Label(root, text="Settings are returned to the agent session, which then "
                   "runs the agent-driven pipeline.", foreground="#555").pack(anchor="w", padx=2, pady=(0, 6))
 
         # Input — Document, then Output dir, then Raw query (optional) at the bottom.
@@ -159,12 +160,12 @@ class App(tk.Tk):
         self.var_maxchars = tk.IntVar(value=30000)
         ttk.Spinbox(adv, from_=2000, to=200000, increment=1000, width=8,
                     textvariable=self.var_maxchars).grid(row=0, column=2, sticky="w")
-        # Model routing: off = Opus orchestrates / extracts (Stage 0) / runs the keyless
-        # web search / re-ranks, Sonnet subagents do the rest; on = every subagent runs on
-        # Opus. Both stay keyless.
+        # Model routing: off = platform default split; on = high-accuracy routing.
+        # The JSON key remains "all_opus" for backward compatibility. Claude Code
+        # maps it to all-Opus; Codex maps it to GPT-5.5 xhigh for delegated reasoning.
         self.vars["all_opus"] = tk.BooleanVar(value=False)
         ttk.Checkbutton(
-            adv, text="Use Opus for all tasks  (default: Opus orchestrates / extracts / web search / re-ranks, Sonnet does the rest)",
+            adv, text="Use high-accuracy routing  (Claude Code: Opus for all tasks; Codex: GPT-5.5 xhigh for delegated reasoning)",
             variable=self.vars["all_opus"], command=self._on_change,
         ).grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=2)
 

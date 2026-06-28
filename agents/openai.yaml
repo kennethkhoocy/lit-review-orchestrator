@@ -1,0 +1,7 @@
+interface:
+  display_name: "Lit Review Orchestrator"
+  short_description: "Document-driven verified literature search"
+  default_prompt: "Use $lit-review-orchestrator to run a verified literature-review pipeline from my manuscript or research query."
+
+policy:
+  allow_implicit_invocation: false
