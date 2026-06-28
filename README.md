@@ -140,7 +140,7 @@ the settings dialog opens, and the agent-driven pipeline runs from your choices.
 
 ### Codex skill
 
-For a user-scoped Codex skill on macOS or Linux:
+Clone the repo into your Codex skills directory:
 
 ```bash
 mkdir -p ~/.agents/skills
@@ -148,16 +148,6 @@ git clone https://github.com/kennethkhoocy/lit-review-orchestrator.git ~/.agents
 pip install -r ~/.agents/skills/lit-review-orchestrator/requirements.txt
 cp ~/.agents/skills/lit-review-orchestrator/lit-review-pipeline.env.example ~/.lit-review-pipeline.env
 ```
-
-For a user-scoped Codex skill on Windows PowerShell:
-
-```powershell
-New-Item -ItemType Directory -Force "$HOME\.agents\skills" | Out-Null
-git clone https://github.com/kennethkhoocy/lit-review-orchestrator.git "$HOME\.agents\skills\lit-review-orchestrator"
-pip install -r "$HOME\.agents\skills\lit-review-orchestrator\requirements.txt"
-Copy-Item "$HOME\.agents\skills\lit-review-orchestrator\lit-review-pipeline.env.example" "$HOME\.lit-review-pipeline.env"
-```
-
 Restart Codex or start a new session, then invoke the skill explicitly:
 
 ```text
